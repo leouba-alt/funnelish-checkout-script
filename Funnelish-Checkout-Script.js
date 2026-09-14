@@ -416,23 +416,60 @@ function getDataProductsFromHTML() {
     });
 }
 
+// Cuando el checkout usa un widget "Product List" (selector de variantes con radio buttons),
+// SOLO nos interesa la opción que el cliente realmente marcó (clase .selected en el .pl-item),
+// no todas las variantes disponibles.
+function getSelectedProductFromProductList() {
+    const selectedItem = document.querySelector('.pl-item.selected');
+    if (!selectedItem) {
+        return null;
+    }
+
+    const nameEl = selectedItem.querySelector('.pl-name');
+    const name = nameEl ? nameEl.textContent.trim() : '';
+    if (!name) {
+        return null;
+    }
+
+    // Intentamos con la clase esperada .pl-price; si no existe con ese nombre exacto,
+    // buscamos dentro del item cualquier texto con forma de precio como respaldo.
+    const priceEl = selectedItem.querySelector('.pl-price');
+    let price = null;
+    if (priceEl) {
+        price = parsePriceNumber(priceEl.textContent);
+    } else {
+        const match = selectedItem.textContent.match(/[\d][\d.,]{2,}/);
+        price = match ? parsePriceNumber(match[0]) : null;
+    }
+
+    return { name, price };
+}
+
 function getDataProducts() {
-    // Método 1 (preferido): PRODUCTS es una variable global que Funnelish expone internamente
+    // Método 1 (el más preciso cuando aplica): si hay un selector de variantes (Product List),
+    // tomamos SOLO la que el cliente marcó, no todas las opciones disponibles.
+    const seleccionado = getSelectedProductFromProductList();
+    if (seleccionado) {
+        console.log('Producto detectado desde la variante seleccionada (.pl-item.selected):', seleccionado);
+        return [seleccionado];
+    }
+
+    // Método 2: PRODUCTS es una variable global que Funnelish expone internamente
     // con los productos configurados en el paso (no la definimos nosotros, la inyecta Funnelish).
-    // Usamos "typeof" para no romper el script si en esta página no existe.
+    // OJO: puede incluir variantes que el cliente NO seleccionó, por eso este método va después.
     if (typeof PRODUCTS !== 'undefined' && Array.isArray(PRODUCTS) && PRODUCTS.length > 0) {
         console.log('Productos detectados desde la variable global PRODUCTS de Funnelish:', PRODUCTS);
         return PRODUCTS.map(p => ({ name: p.name, price: p.price }));
     }
 
-    // Método 2 (respaldo): leer directo del widget "Order Summary" en el HTML
+    // Método 3 (respaldo): leer directo del widget "Order Summary" en el HTML
     const productosDesdeHTML = getDataProductsFromHTML();
     if (productosDesdeHTML.length > 0) {
         console.log('Productos detectados desde el HTML (.os-name):', productosDesdeHTML);
         return productosDesdeHTML;
     }
 
-    console.warn('No se pudo detectar ningún producto: ni la variable global PRODUCTS de Funnelish ni el widget de Order Summary (.os-name) están disponibles en esta página todavía.');
+    console.warn('No se pudo detectar ningún producto: ni .pl-item.selected, ni PRODUCTS, ni .os-name están disponibles en esta página todavía.');
     return [];
 }
 

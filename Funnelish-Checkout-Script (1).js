@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 // CONFIGURACIÓN DINÁMICA
 // Se lee desde los atributos data-* del propio <script> que carga
 // este archivo, para poder reusar el mismo script en cualquier

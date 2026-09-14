@@ -426,7 +426,15 @@ function getSelectedProductFromProductList() {
     }
 
     const nameEl = selectedItem.querySelector('.pl-name');
-    const name = nameEl ? nameEl.textContent.trim() : '';
+    let name = '';
+    if (nameEl) {
+        // Clonamos el elemento para no tocar el DOM real, y le quitamos cualquier
+        // etiqueta/badge (ej. "Más Vendido") que Funnelish suele marcar con clases
+        // que contienen la palabra "tag" (como vimos en .top_tag).
+        const clone = nameEl.cloneNode(true);
+        clone.querySelectorAll('[class*="tag" i]').forEach(el => el.remove());
+        name = clone.textContent.replace(/\s+/g, ' ').trim();
+    }
     if (!name) {
         return null;
     }

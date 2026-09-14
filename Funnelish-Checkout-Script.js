@@ -1,4 +1,4 @@
-// ───────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 // CONFIGURACIÓN DINÁMICA
 // Se lee desde los atributos data-* del propio <script> que carga
 // este archivo, para poder reusar el mismo script en cualquier
@@ -389,51 +389,67 @@ function recoverData() {
     return data;
 }
 
-function getDataProducts() {
-    // Extrae los nombres de los productos y elimina espacios innecesarios
-    const productNames = [...document.querySelectorAll('.os-name')].map(element =>
-        element.textContent.trim()
+// Convierte un texto de precio (ej. "$119.900" o "COL$ 119,900") a un número entero.
+function parsePriceNumber(text) {
+    const digits = (text || '').replace(/[^0-9]/g, '');
+    return digits ? parseInt(digits, 10) : 0;
+}
+
+// Lee los productos leyendo directo del widget "Order Summary" que Funnelish renderiza en el HTML
+function getDataProductsFromHTML() {
+    // Nombres de los productos, tal como los muestra Funnelish en el resumen del pedido
+    const nameElements = [...document.querySelectorAll('.os-name')];
+
+    // Precios por producto: tomamos todos los .os-price EXCEPTO el que está dentro de .os-total
+    // (ese es el total general, no el precio de un producto individual)
+    const priceElements = [...document.querySelectorAll('.os-price')].filter(
+        el => !el.closest('.os-total')
     );
 
-    // Compara ignorando espacios iniciales y finales
-    const mergedProductInfo = PRODUCTS.filter(product =>
-        productNames.some(name => name.trim() === product.name.trim())
-    ).map(product => ({
-        name: product.name,
-        price: product.price,
-        // id: product.id,
-        // sku: product.sku,
-    }));
+    // Emparejamos nombre y precio por posición (deberían venir en el mismo orden en el HTML)
+    return nameElements.map((nameEl, index) => {
+        const priceEl = priceElements[index];
+        return {
+            name: nameEl.textContent.trim(),
+            price: priceEl ? parsePriceNumber(priceEl.textContent) : null,
+        };
+    });
+}
 
-    return mergedProductInfo;
+function getDataProducts() {
+    // Método 1 (preferido): PRODUCTS es una variable global que Funnelish expone internamente
+    // con los productos configurados en el paso (no la definimos nosotros, la inyecta Funnelish).
+    // Usamos "typeof" para no romper el script si en esta página no existe.
+    if (typeof PRODUCTS !== 'undefined' && Array.isArray(PRODUCTS) && PRODUCTS.length > 0) {
+        console.log('Productos detectados desde la variable global PRODUCTS de Funnelish:', PRODUCTS);
+        return PRODUCTS.map(p => ({ name: p.name, price: p.price }));
+    }
+
+    // Método 2 (respaldo): leer directo del widget "Order Summary" en el HTML
+    const productosDesdeHTML = getDataProductsFromHTML();
+    if (productosDesdeHTML.length > 0) {
+        console.log('Productos detectados desde el HTML (.os-name):', productosDesdeHTML);
+        return productosDesdeHTML;
+    }
+
+    console.warn('No se pudo detectar ningún producto: ni la variable global PRODUCTS de Funnelish ni el widget de Order Summary (.os-name) están disponibles en esta página todavía.');
+    return [];
 }
 
 
-function getDataPrice(mergedProductInfo) {
-    const calculatedTotal = mergedProductInfo.reduce((acc, product) => acc + product.price, 0);
-    console.log(`Total Calculado: Col$ ${calculatedTotal}`); // Muestra el total calculado
-
+function getDataPrice(products) {
     const totalElement = document.querySelector('.os-total .os-price');
 
-    // Si esta plantilla/cuenta no usa esas clases CSS, no podemos verificar contra el HTML.
-    // En ese caso usamos directamente el total calculado, en vez de romper el script.
-    if (!totalElement) {
-        console.warn('No se encontró el elemento .os-total .os-price en esta página. Se usa el total calculado sin verificar contra el HTML.');
-        return calculatedTotal;
+    if (totalElement) {
+        const total = parsePriceNumber(totalElement.textContent);
+        console.log(`Total leído del HTML: Col$ ${total}`);
+        return total;
     }
 
-    const totalPriceFromHTML = totalElement.textContent.trim();
-
-    // Verificación de consistencia
-    if (totalPriceFromHTML.includes(calculatedTotal.toString())) {
-        console.log('El total calculado coincide con el total del HTML');
-        return calculatedTotal;
-    } else {
-        console.log('Hay una discrepancia entre el total calculado y el total del HTML');
-        return totalPriceFromHTML;
-    }
-
-
+    // Respaldo: si no encontramos el total en el HTML, lo calculamos sumando los productos
+    const totalCalculado = (products || []).reduce((acc, p) => acc + (p.price || 0), 0);
+    console.warn(`No se encontró el elemento .os-total .os-price en esta página. Se usa el total calculado sumando los productos: Col$ ${totalCalculado}`);
+    return totalCalculado;
 }
 
 let idMake

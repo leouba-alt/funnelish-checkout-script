@@ -324,41 +324,27 @@ function recoverData() {
     return data;
 }
 
-// Convierte un texto de precio ("$50.000", "COP 50,000.00", etc.) a número entero
-function parsePrice(text) {
-    const digits = (text || '').replace(/[^\d]/g, '');
-    return digits ? parseInt(digits, 10) : 0;
-}
-
-// Lee productos y precios directamente del resumen del pedido en el HTML.
-// Genérico: no depende de un arreglo PRODUCTS hardcodeado por tienda,
-// por lo que funciona igual sin importar el catálogo de cada cuenta.
+// Lee los productos del resumen del pedido y los cruza con el catálogo PRODUCTS
+// (arreglo con { name, price } que debe venir cargado por otro script de la tienda,
+// igual que countryStateInfo).
 function getDataProducts() {
-    const nameEls = [...document.querySelectorAll('.os-name')];
-    // Tomamos los precios de línea, excluyendo el precio del total (.os-total .os-price)
-    const priceEls = [...document.querySelectorAll('.os-price')]
-        .filter(el => !el.closest('.os-total'));
+    if (typeof PRODUCTS === 'undefined') {
+        console.error('PRODUCTS no está definido, debes cargar el script con el catálogo de productos de esta tienda.');
+        return [];
+    }
 
-    return nameEls.map((nameEl, i) => ({
-        name: nameEl.textContent.trim(),
-        price: parsePrice(priceEls[i]?.textContent)
+    const productNames = [...document.querySelectorAll('.os-name')].map(el => el.textContent.trim());
+
+    return PRODUCTS.filter(product =>
+        productNames.some(name => name === product.name.trim())
+    ).map(product => ({
+        name: product.name,
+        price: product.price
     }));
 }
 
 function getDataPrice(products) {
-    const calculatedTotal = products.reduce((acc, product) => acc + product.price, 0);
-
-    // Solo para depuración: compara contra el total mostrado en el HTML
-    const totalEl = document.querySelector('.os-total .os-price');
-    if (totalEl) {
-        const totalFromHTML = parsePrice(totalEl.textContent);
-        if (totalFromHTML !== calculatedTotal) {
-            console.warn(`[Integramelo] El total calculado (${calculatedTotal}) no coincide con el total del HTML (${totalFromHTML})`);
-        }
-    }
-
-    // Siempre devolvemos un número, nunca texto, para que el webhook reciba un tipo consistente
-    return calculatedTotal;
+    return products.reduce((acc, product) => acc + product.price, 0);
 }
 
 let idMake

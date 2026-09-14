@@ -1,3 +1,9 @@
+/**
+ * Funnelish-Checkout-Script.js
+ * Configuración: Tienda TyV
+ * Identificador: LeadID
+ */
+
 const HOST_WEBHOOK = "";
 const HOST_PREELIMINAR_WEBHOOK = "https://automatizacion-n8n.v4iimk.easypanel.host/webhook/funnelish-preliminar-tyv";
 const STORE_NAME = "Tienda TyV";
@@ -66,7 +72,7 @@ function createMailAleatory() {
     return mail + `@gmail.com`;
 }
 
-// Validación de teléfono Colombia en el envío
+// Validación de teléfono Colombia en el evento submit
 document.addEventListener('DOMContentLoaded', function () {
     const submitButton = document.querySelector('a[href="#submit-step"]');
     if (submitButton) {
@@ -76,7 +82,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const patronTelefonoColombia = /^\+57[3]\d{9}$/;
 
             if (!patronTelefonoColombia.test(telefono)) {
-                console.log("No se permite enviar el formulario pues el teléfono " + telefono + " es inválido");
+                console.log("Teléfono inválido:", telefono);
                 if (inputTelefono) inputTelefono.className = 'invalid';
                 event.stopImmediatePropagation();
             }
@@ -101,7 +107,7 @@ function enviarConDebouncing() {
     clearTimeout(timerId);
     timerId = setTimeout(async () => {
         count++;
-        console.log(`Enviamos el lead con debouncing, count: ${count}`);
+        console.log(`Enviando lead con debouncing, count: ${count}`);
         pushLead();
     }, time);
 }
@@ -110,7 +116,7 @@ async function pushLead() {
     try {
         const dataForm = recoverData();
         if (!dataForm.client.phone || dataForm.client.phone === '+57') {
-            console.log(`No se puede enviar el lead, número de teléfono incompleto`);
+            console.log("Teléfono vacío o incompleto. Omitiendo envío preliminar.");
             return false;
         }
         await sendLead(dataForm, true);
@@ -148,8 +154,9 @@ function handleInputEvent(event) {
 
 function recoverData() {
     const getValueQuery = (name) => document.querySelector(`[name="${name}"]`)?.value || '';
+    const products = getDataProducts();
 
-    const data = {
+    return {
         storeName: STORE_NAME,
         LeadID: getLeadID(),
         urlOrigin: `${location.hostname}${location.pathname}`,
@@ -168,46 +175,86 @@ function recoverData() {
             address: getValueQuery('shipping_address'),
             city: getValueQuery('shipping_city'),
             state: getValueQuery('shipping_state'),
-            country: getValueQuery('shipping_country'),
+            country: getValueQuery('shipping_country') || 'CO',
             zipCode: getValueQuery('zip_code'),
             notes: getValueQuery('notes'),
             coordinates: { latitude: null, longitude: null }
-        }
+        },
+        products: products,
+        totalPrice: getDataPrice(products)
     };
-    data.products = getDataProducts();
-    data.totalPrice = getDataPrice(data.products);
-
-    return data;
 }
 
+// Extracción robusta de productos en Funnelish
 function getDataProducts() {
-    const productNames = [...document.querySelectorAll('.os-name')].map(element =>
-        element.textContent.trim()
-    );
+    let products = [];
 
-    if (typeof PRODUCTS === 'undefined') return [];
-
-    return PRODUCTS.filter(product =>
-        productNames.some(name => name.trim() === product.name.trim())
-    ).map(product => ({
-        name: product.name,
-        price: product.price
-    }));
-}
-
-function getDataPrice(mergedProductInfo) {
-    const totalElem = document.querySelector('.os-total .os-price');
-    const totalPriceFromHTML = totalElem ? totalElem.textContent.trim() : '';
-    const calculatedTotal = mergedProductInfo.reduce((acc, product) => acc + (product.price || 0), 0);
-
-    if (totalPriceFromHTML.includes(calculatedTotal.toString())) {
-        return calculatedTotal;
-    } else {
-        return totalPriceFromHTML;
+    // 1. Detección por contexto de orden nativo de Funnelish
+    if (window.funnelish && window.funnelish.order && Array.isArray(window.funnelish.order.cart)) {
+        return window.funnelish.order.cart.map(item => ({
+            name: item.name || item.title || '',
+            price: Number(item.price || 0)
+        }));
     }
+
+    // 2. Detección por input de producto seleccionado en checkout
+    const selectedInputs = document.querySelectorAll('input[name="product_id"]:checked, input[name="product"]:checked, .product-selected');
+    if (selectedInputs.length > 0) {
+        selectedInputs.forEach(input => {
+            const container = input.closest('.product-item, .item, tr, .product-row, label') || input.parentElement;
+            const name = container?.querySelector('.product-title, .title, .product-name, .name')?.textContent?.trim() || 'Producto';
+            const priceText = container?.querySelector('.product-price, .price, .amount')?.textContent?.replace(/[^0-9]/g, '') || '0';
+            products.push({
+                name: name,
+                price: parseFloat(priceText) || 0
+            });
+        });
+        if (products.length > 0) return products;
+    }
+
+    // 3. Fallback: elementos del resumen de compra (.os-name / .os-price)
+    const productNames = [...document.querySelectorAll('.os-name, .order-item-name')].map(el => el.textContent.trim());
+    const productPrices = [...document.querySelectorAll('.os-price, .order-item-price')].map(el => {
+        const val = el.textContent.replace(/[^0-9]/g, '');
+        return parseFloat(val) || 0;
+    });
+
+    if (productNames.length > 0) {
+        return productNames.map((name, i) => ({
+            name: name,
+            price: productPrices[i] || 0
+        }));
+    }
+
+    // 4. Fallback: array global PRODUCTS si existiera en la página
+    if (typeof PRODUCTS !== 'undefined' && Array.isArray(PRODUCTS)) {
+        return PRODUCTS.map(p => ({
+            name: p.name || '',
+            price: Number(p.price || 0)
+        }));
+    }
+
+    return products;
 }
 
-// Inicialización de LeadID
+// Cálculo y recuperación del precio total
+function getDataPrice(mergedProductInfo) {
+    const totalElem = document.querySelector('.os-total .os-price, .total-price, .order-total .price, [data-total]');
+    if (totalElem) {
+        const numericTotal = parseFloat(totalElem.textContent.replace(/[^0-9]/g, ''));
+        if (!isNaN(numericTotal) && numericTotal > 0) {
+            return numericTotal;
+        }
+    }
+
+    if (mergedProductInfo && mergedProductInfo.length > 0) {
+        return mergedProductInfo.reduce((acc, product) => acc + (Number(product.price) || 0), 0);
+    }
+
+    return 0;
+}
+
+// Inicialización y persistencia de LeadID
 let leadId;
 
 function makeId(length = 10) {
@@ -220,13 +267,9 @@ function setLeadIdLocalStorage() {
         return { id: leadId };
     }
 
-    // Limpieza de claves previas obsoletas si existieran
-    if (localStorage.getItem('idIntegramelo')) {
-        localStorage.removeItem('idIntegramelo');
-    }
-    if (localStorage.getItem('IDIntegramelo')) {
-        localStorage.removeItem('IDIntegramelo');
-    }
+    // Limpieza de claves previas obsoletas
+    if (localStorage.getItem('idIntegramelo')) localStorage.removeItem('idIntegramelo');
+    if (localStorage.getItem('IDIntegramelo')) localStorage.removeItem('IDIntegramelo');
 
     const currentUrl = `${window.location.hostname}${window.location.pathname}`;
     let elementosArray = JSON.parse(localStorage.getItem('LeadID')) || [];
@@ -257,7 +300,6 @@ function getLeadID() {
     return leadId;
 }
 
-// Configuración inicial en DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
     getLeadID();
     const urlOrigin = `${window.location.hostname}${window.location.pathname}`;
@@ -279,7 +321,7 @@ addEventListener('load', () => {
     }
 });
 
-// Concatenar dirección
+// Concatenación de Dirección + Barrio
 window.addEventListener('load', initConcatenarDireccion);
 
 function initConcatenarDireccion() {
@@ -336,3 +378,5 @@ function ocultarInputs() {
         }
     }
 }
+
+

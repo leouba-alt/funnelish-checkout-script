@@ -290,6 +290,20 @@ function splitFullName(fullName) {
     };
 }
 
+// Arma el nombre del cliente sin importar cómo esté armado el formulario de esa tienda:
+// - Si existe un campo combinado "full_name", lo separa con splitFullName().
+// - Si no existe, busca nombre y apellido en campos separados (probando variantes comunes).
+function getClientName(getValueQuery) {
+    const fullName = getValueQuery('full_name');
+    if (fullName) {
+        return { ...splitFullName(fullName), fullName };
+    }
+
+    const name = getValueQuery('name') || getValueQuery('first_name');
+    const lastName = getValueQuery('lastName') || getValueQuery('last_name') || getValueQuery('apellido');
+    return { name, lastName, fullName: `${name} ${lastName}`.trim() };
+}
+
 function recoverData() {
     const getValueQuery = (name) => document.querySelector(`[name="${name}"]`)?.value || '';
 
@@ -302,8 +316,7 @@ function recoverData() {
         ipOrigin: '',
         notes: getValueQuery('notes'),
         client: {
-            ...splitFullName(getValueQuery('full_name')),
-            fullName: getValueQuery('full_name'),
+            ...getClientName(getValueQuery),
             email: getValueQuery('email'), // Asegúrate de que el selector sea correcto (email, no mail)
             phone: getValueQuery('phone'),
         },

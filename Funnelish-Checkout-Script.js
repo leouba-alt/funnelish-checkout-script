@@ -146,6 +146,10 @@ function createMailAleatory() {
 
 
 
+// Patrón de teléfono celular colombiano completo: +57 seguido de 10 dígitos que empiezan en 3.
+// Se usa tanto para bloquear el botón de "Continuar" como para decidir si un preliminar es válido.
+const PHONE_REGEX_CO = /^\+57[3]\d{9}$/;
+
 function phoneIsValid(input) {
     // 1. Forzamos que la cadena empiece con +57
     let raw = input.value.toString();
@@ -183,9 +187,8 @@ document.addEventListener('DOMContentLoaded', function () {
     submitButton.addEventListener('click', function (event) {
         var inputTelefono = document.getElementsByName('phone')[0];
         var telefono = inputTelefono.value;
-        var patronTelefonoColombia = /^\+57[3]\d{9}$/;
 
-        if (!patronTelefonoColombia.test(telefono)) {
+        if (!PHONE_REGEX_CO.test(telefono)) {
             console.log("No se permite enviar el formulario pues el telefono " + telefono + " es invalido")
             //alert('Por favor ingrese un número de teléfono válido en Colombia (10 dígitos y comienza con 3).');
             inputTelefono.className = 'invalid';
@@ -234,11 +237,11 @@ function enviarConDebouncing() {
 async function pushLead() {
     try {
         const dataForm = recoverData()
-        //miramos si vale la pena mandar el lead, puede que no estén los datos suficientes o que el no hallan cambio con respecto la vez pasada que mandamos
-        if (dataForm.client.phone === '' ||
-            dataForm.client.phone == '+57') {
-            //dataForm.client.email === '' ||
-            console.log(`no se puede enviar el lead, algunos campos son inválidos`)
+        //miramos si vale la pena mandar el lead: el teléfono debe estar COMPLETO
+        //(+57 seguido de 10 dígitos), no solo "no vacío" -- si el comprador apenas
+        //va escribiendo (ej: "+573224"), todavía no vale la pena enviarlo.
+        if (!PHONE_REGEX_CO.test(dataForm.client.phone)) {
+            console.log(`no se puede enviar el lead, el teléfono todavía no está completo`)
             return false
         }
 
